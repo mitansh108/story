@@ -1,104 +1,73 @@
 # Story-Mitansh — Cinematic Video Portfolio
 
-A single-page, video-centric personal portfolio built on a fully serverless,
-zero-cost stack.
+A single-page, video-centric portfolio for BBTT Round 1: five async video answers
+presented as chapters in a cinematic player, backed by a fully serverless stack.
 
-| Tier     | Tech                                                                 |
-| -------- | -------------------------------------------------------------------- |
-| Frontend | Next.js 14 (static export) + Tailwind CSS + Framer Motion + react-player |
-| Compute  | FastAPI + Mangum on an AWS Lambda Function URL (no API Gateway)      |
-| Storage  | AWS S3, private bucket, accessed via 1-hour presigned GET URLs       |
+## What it does
+
+- **Landing experience** — hero, intro accordion, and a “video theater” for all five questions.
+- **Chapter navigation** — prev/next controls, keyboard arrows, and a chapter list to jump between answers.
+- **Secure playback** — the browser never sees long-lived S3 credentials; each visit gets fresh presigned URLs from the API.
+- **Static frontend** — the UI is a pre-rendered Next.js export hosted on Vercel; no Node server at runtime.
+
+## Architecture
 
 ```
-Browser  ──GET /api/videos──►  Lambda (FastAPI)  ──presign──►  S3
-   ▲                                  │
-   └──────── JSON {id,title,desc,url} ┘
-   │
-   └──────── direct HTTP range GET ──────────────────────►  S3 (private)
+┌─────────────────────────────────────────────────────────────────┐
+│  Vercel (static Next.js export)                                 │
+│  NEXT_PUBLIC_API_URL → Lambda Function URL                      │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ GET /api/videos
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  AWS Lambda (Python 3.11)                                     │
+│  FastAPI + Mangum · handler: main.handler                       │
+│  Reads chapter metadata · mints S3 presigned GET URLs (1h TTL)  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ presign only (no proxy)
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Amazon S3 (private bucket)                                     │
+│  Objects: q1.mp4 … q5.mp4                                       │
+└─────────────────────────────────────────────────────────────────┘
+
+Browser ──GET /api/videos──► Lambda ──► JSON [{ id, title, description, url }]
+Browser ──range GET url────► S3 directly (streaming, not through Lambda)
 ```
 
-## Repository
+| Tier     | Role |
+| -------- | ---- |
+| **Frontend** | Next.js 14 static export, Tailwind CSS, Framer Motion, react-player |
+| **Compute**  | FastAPI on Lambda via Mangum; public **Function URL** (no API Gateway) |
+| **Storage**  | Private S3 bucket; videos served only through presigned GET URLs |
+
+### Request flow
+
+1. The page loads from Vercel and calls `GET /api/videos` on the Lambda Function URL.
+2. Lambda returns five chapter records: metadata plus a short-lived presigned URL per `.mp4`.
+3. react-player streams each video **directly from S3** using HTTP range requests; Lambda is not in the video path.
+
+### Content model
+
+Chapter titles, descriptions, and S3 keys are defined in code as an immutable tuple in
+[`backend/main.py`](backend/main.py) (`VIDEOS`). There is no database, admin UI, or migration layer—only
+S3 objects keyed to match (e.g. `q1.mp4` … `q5.mp4`).
+
+## Repository layout
 
 ```
 Story-Mitansh/
-  backend/    # FastAPI + Mangum (main.py)
-  frontend/   # Next.js static-export SPA
+  backend/    # FastAPI app + Mangum handler (single main.py)
+  frontend/   # Next.js static-export SPA (Vercel root: frontend/)
 ```
 
-Each subdirectory has its own README with deeper details.
+See [`backend/README.md`](backend/README.md) for the API contract, Lambda configuration, and IAM expectations.
 
----
+## Cost profile
 
-## 1. Local development
+Designed for near-zero cost at portfolio traffic levels:
 
-### 1a. Backend
-
-```bash
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-export S3_BUCKET=your-bucket-name
-export AWS_REGION=us-east-1
-export AWS_PROFILE=your-aws-profile
-export FRONTEND_ORIGIN=http://localhost:3000
-uvicorn main:app --reload --port 8000
-```
-
-Sanity check:
-
-```bash
-curl -s http://localhost:8000/api/videos | jq '.[0]'
-```
-
-### 1b. Frontend
-
-```bash
-cd frontend
-cp .env.local.example .env.local            # NEXT_PUBLIC_API_URL=http://localhost:8000
-npm install
-npm run dev                                 # http://localhost:3000
-```
-
----
-
-## 2. AWS setup
-
-Configure S3, IAM, Lambda, and the Function URL from the AWS Console. See
-[`backend/README.md`](backend/README.md) for handler name, env vars, and IAM
-permissions.
-
----
-
-## 3. Deploy the frontend (Vercel)
-
-1. Push this repo to GitHub.
-2. In Vercel: **Add New… → Project → Import** the repo.
-3. Configure:
-   - **Root Directory:** `frontend`
-   - **Framework Preset:** Next.js (auto-detected)
-   - **Environment Variable:** `NEXT_PUBLIC_API_URL` → your Lambda Function URL
-4. Deploy.
-
----
-
-## 4. Iterating on the chapters
-
-The 5 chapter records live in [`backend/main.py`](backend/main.py) under
-`VIDEOS`. To add or rename a chapter:
-
-1. Edit `VIDEOS` (titles, descriptions, S3 keys).
-2. Upload the matching `.mp4` to the S3 bucket.
-3. Redeploy the Lambda function.
-
-No database, no admin panel, no migrations.
-
----
-
-## 5. Cost notes
-
-- **Vercel Hobby:** static hosting + bandwidth, free tier.
-- **AWS Lambda:** 1M free requests/month; this endpoint is a single GET.
-- **AWS Lambda Function URL:** no separate charge (no API Gateway).
-- **S3:** storage costs ≈ $0.023/GB-month; egress is the main variable
-  (presigned GETs stream directly from S3 to the viewer).
-- **No NAT, no VPC, no database.**
+- **Vercel** — static hosting on the Hobby tier.
+- **Lambda** — one lightweight GET per page load; Function URL has no separate charge vs API Gateway.
+- **S3** — storage for compressed MP4s; egress billed on direct viewer downloads (presigned URLs), not through Lambda.
+- **No** VPC, NAT gateway, RDS, or always-on servers.

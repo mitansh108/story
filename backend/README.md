@@ -1,54 +1,61 @@
-# Backend — Cinematic Video Portfolio API
+# Backend — Video API (Lambda)
 
-Single-file FastAPI service (`main.py`) wrapped with Mangum for AWS Lambda.
+Single-file FastAPI application ([`main.py`](main.py)) wrapped with **Mangum** for AWS Lambda.
+Exposed through a **Lambda Function URL** (auth: none; CORS configured for the frontend origin).
 
-```
-GET /api/videos
-```
+## API
 
-Returns the 5 chapter records with freshly-minted S3 presigned URLs (1-hour TTL).
+| Method | Path | Response |
+| ------ | ---- | -------- |
+| `GET` | `/` | Health JSON (`status`, `service`) |
+| `GET` | `/api/videos` | Array of chapter objects with presigned playback URLs |
 
-## Local development
+Each video object:
 
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-export S3_BUCKET=your-bucket
-export AWS_REGION=us-east-1
-export AWS_PROFILE=your-profile
-export FRONTEND_ORIGIN=http://localhost:3000
-
-uvicorn main:app --reload --port 8000
+```json
+{
+  "id": 1,
+  "title": "Q1 — …",
+  "description": "60s · …",
+  "key": "q1.mp4",
+  "url": "https://<bucket>.s3.amazonaws.com/q1.mp4?X-Amz-…"
+}
 ```
 
-```bash
-curl http://localhost:8000/api/videos | jq
-```
+Presigned URLs use `PRESIGN_EXPIRES` (default **3600** seconds). The handler does not proxy video bytes—clients stream from S3.
 
-## Lambda deployment
+## Runtime
 
-Upload `main.py` + dependencies as a zip to Lambda via the AWS Console.
+| Setting | Value |
+| ------- | ----- |
+| Runtime | Python 3.11 |
+| Handler | `main.handler` |
+| Adapter | Mangum (`lifespan="off"`) |
+| Typical sizing | 512 MB memory, 10 s timeout |
 
-- **Runtime:** Python 3.11
-- **Handler:** `main.handler`
-- **Memory:** 512 MB
-- **Timeout:** 10 s
+## Configuration (environment variables)
 
-Enable a **Function URL** (Auth type: NONE) and set CORS to allow your frontend origin.
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `S3_BUCKET` | yes | Bucket containing chapter `.mp4` objects |
+| `FRONTEND_ORIGIN` | yes | Primary frontend origin for CORS |
+| `EXTRA_CORS_ORIGINS` | no | Comma-separated additional allowed origins |
+| `PRESIGN_EXPIRES` | no | Presigned URL TTL in seconds (default `3600`) |
 
-## Environment variables
+`AWS_REGION` is set automatically on Lambda; do not override it as a custom env var.
 
-| Variable             | Required | Description                                      |
-| -------------------- | -------- | ------------------------------------------------ |
-| `S3_BUCKET`          | yes      | Bucket holding the chapter videos                |
-| `AWS_REGION`         | no       | Defaults to `us-east-1` (auto-set on Lambda)     |
-| `FRONTEND_ORIGIN`    | yes      | Production frontend origin for CORS              |
-| `EXTRA_CORS_ORIGINS` | no       | Comma-separated additional origins (preview URLs)|
-| `PRESIGN_EXPIRES`    | no       | Override presign TTL in seconds (default 3600)   |
+## IAM (execution role)
 
-## IAM
+The Lambda execution role needs:
 
-The Lambda execution role needs `s3:GetObject` on your bucket plus the managed policy `AWSLambdaBasicExecutionRole`.
+- **`AWSLambdaBasicExecutionRole`** — CloudWatch Logs
+- **`s3:GetObject`** on `arn:aws:s3:::${S3_BUCKET}/*` — presign and validate object access
+
+## Public Function URL
+
+The Function URL must allow unauthenticated `GET` from the browser. The resource policy requires **both**:
+
+- `lambda:InvokeFunctionUrl` (with `lambda:FunctionUrlAuthType: NONE`)
+- `lambda:InvokeFunction` (with `lambda:InvokedViaFunctionUrl: true`)
+
+CORS on the Function URL should include the Vercel production origin and any preview origins you use.
