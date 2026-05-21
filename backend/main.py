@@ -17,7 +17,6 @@ from typing import Mapping
 import boto3
 from botocore.client import Config
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 from pydantic import BaseModel
 
@@ -165,13 +164,8 @@ app = FastAPI(
     description="Serves chapter metadata with short-lived S3 presigned URLs.",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=list(settings.cors_origins),
-    allow_credentials=False,
-    allow_methods=["GET", "OPTIONS"],
-    allow_headers=["*"],
-)
+# CORS is handled by the Lambda Function URL config (not FastAPI).
+# Adding CORSMiddleware here duplicates Access-Control-Allow-Origin and breaks browsers.
 
 
 @app.get("/", include_in_schema=False)
