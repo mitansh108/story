@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+  background-color: #ffffff;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: rgba(15, 23, 42, 0.1);
+  color: #0f172a;
+}
+
+@layer utilities {
+  .bg-dot-grid {
+    background-image: radial-gradient(
+      circle,
+      rgba(15, 23, 42, 0.06) 1px,
+      transparent 1px
+    );
+    background-size: 28px 28px;
+  }
+
+  .border-beam-mask {
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    -webkit-mask-composite: xor;
+    padding: 1px;
+  }
+}

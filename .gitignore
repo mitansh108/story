@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.local
+.pytest_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+.npm/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Lambda packaging artifacts
+backend/build/
+backend/dist/
+backend/*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
